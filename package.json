@@ -1,0 +1,16 @@
+{
+  "name": "discord",
+  "version": "1.0.0",
+  "description": "discord bot for liquid tonky-wonky server",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^12.2.0",
+    "eslint": "^7.2.0",
+    "random-emoji": "^1.0.2"
+  }
+}
