@@ -1,2 +1,2 @@
 # TinkyWinky
-Discord.js bot for playing Yaiy
+Discord.js bot for playing YIAY
