@@ -1,10 +1,12 @@
+//ToDo: compartmentalisation & testing
 //-------------- Start-Up ---------------
 const fs = require('fs');
 const { prefix, token } = require('./config.json');
+const prompts = require('./prompts.json');
+const validEmoji = require('./emoji.json');
 const Discord = require('discord.js');
 const client = new Discord.Client();
-const randomEmoji = require('random-emoji');
-const twemoji = require('twemoji');
+
 
 client.commands = new Discord.Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
@@ -22,7 +24,7 @@ client.login(token);
 
 let qdReaction = null, playerList = [], responses = [], czar, signUpAccessor, voted;
 const gameFlags = { started: false, roundStarted: false, activeChannel: null };
-let responseMessage ;
+let responseMessage;
 //listen for messages
 client.on('message', async message => {
 
@@ -33,8 +35,7 @@ client.on('message', async message => {
 			//and the player hasnt given a response yet
 			responses.findIndex(response => response.authorId === message.author.id) === -1) {
 			//add their response and assign an emoji
-			//TODO: make sure only valid emojis are used
-			responses.push({ authorId: message.author.id, content: message.content, emoji: twemoji.parse(randomEmoji.random({ count:1 })[0].character).className });
+			responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length) + 1)].emoji });
 		}
 		//when all responses are received, start displaying them
 		if (responses.length === playerList.length) {
@@ -174,18 +175,11 @@ client.on('message', async message => {
 		signUpAccessor.end();
 	}
 
-	if(command === 'emoji') {
-		// eslint-disable-next-line no-unused-vars,no-inline-comments
-		const emojiTest = twemoji.parse(randomEmoji.random({ count:1 })[0].character).base;
-		message.react(emojiTest);
-		czar = message.author;
-	}
-
 	//Used for debugging rounds solo
 	if(command === 'embed') {
 		qdReaction = null;
 		for (let i = 0; i < 9; i++) {
-			responses.push({ authorId: message.author.id, content: `${i}`, emoji: randomEmoji.random({ count:1 })[0].character });
+			responses.push({ authorId: message.author.id, content: `${i}`, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length) + 1)].emoji });
 		}
 		responseMessage = new Discord.MessageEmbed().setTitle('Here are your answers');
 		responseMessage.addField(responses[0].emoji, responses[0].content, true);
@@ -195,9 +189,9 @@ client.on('message', async message => {
 });
 
 function BeginRound() {
-	//TODO: generate prompt
+	const promptID = Math.floor((Math.random() * prompts.length) + 1);
 	playerList.forEach(user => client.users.cache.get(`${user.id}`).createDM());
-	playerList.forEach(user => client.users.cache.get(`${user.id}`).send('prompt'));
+	playerList.forEach(user => client.users.cache.get(`${user.id}`).send(`${prompts[promptID].Prompt}`));
 	gameFlags.roundStarted = true;
 	gameFlags.activeChannel.send('Round started, Dms sent!');
 }
