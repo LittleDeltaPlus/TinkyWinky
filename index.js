@@ -22,7 +22,7 @@ client.once('ready', () => {
 client.login(token);
 // ------------------------------------------
 
-let qdReaction = null, playerList = [], responses = [], czar, signUpAccessor, voted;
+let qdReaction = null, playerList = [], responses = [], czar, signUpAccessor, voted, prevPrompts = [];
 const gameFlags = { started: false, roundStarted: false, activeChannel: null };
 let responseMessage;
 //listen for messages
@@ -35,7 +35,7 @@ client.on('message', async message => {
 			//and the player hasnt given a response yet
 			responses.findIndex(response => response.authorId === message.author.id) === -1) {
 			//add their response and assign an emoji
-			responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length) + 1)].emoji });
+			responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length))].Emoji });
 		}
 		//when all responses are received, start displaying them
 		if (responses.length === playerList.length) {
@@ -62,7 +62,7 @@ client.on('message', async message => {
 			//filter hands up messages
 			// eslint-disable-next-line no-unused-vars
 			const filter = (reaction, user) => {return reaction.emoji.name === '\ud83d\ude4b';};
-			const signUp = message.createReactionCollector(filter, { time: 15000 });
+			const signUp = message.createReactionCollector(filter, { time: 30000 });
 			//log added users
 			signUp.on('collect', (reaction, user) => {
 				if(user.id !== client.user.id && user.id !== czar.id) {
@@ -104,7 +104,7 @@ client.on('message', async message => {
 			};
 
 			//watch the embedded message to know when to append answers
-			const wait = message.createReactionCollector(filter, { time: 15000 });
+			const wait = message.createReactionCollector(filter, { time: 150000000 });
 			let i = 1;
 			//log added users
 			wait.on('collect', async (reaction, user) => {
@@ -140,9 +140,11 @@ client.on('message', async message => {
 							}
 							//kill Listner
 							wait.stop();
-							if(CountScores(message)) {
-								BeginRound();
-							}
+							CountScores(message).then(function() {
+								if(gameFlags.started) {
+									BeginRound();
+								}
+							});
 						}
 					});
 				}
@@ -179,7 +181,7 @@ client.on('message', async message => {
 	if(command === 'embed') {
 		qdReaction = null;
 		for (let i = 0; i < 9; i++) {
-			responses.push({ authorId: message.author.id, content: `${i}`, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length) + 1)].emoji });
+			responses.push({ authorId: message.author.id, content: `${i}`, emoji: validEmoji[Math.floor((Math.random() * validEmoji.length))].Emoji });
 		}
 		responseMessage = new Discord.MessageEmbed().setTitle('Here are your answers');
 		responseMessage.addField(responses[0].emoji, responses[0].content, true);
@@ -188,8 +190,17 @@ client.on('message', async message => {
 	}
 });
 
+function get_rand() {
+	const rand = Math.floor((Math.random() * prompts.length) + 1);
+	if(prevPrompts.findIndex(id => id === rand) === -1) {
+		prevPrompts.push(rand);
+		return rand;
+	}
+	return get_rand();
+}
+
 function BeginRound() {
-	const promptID = Math.floor((Math.random() * prompts.length) + 1);
+	const promptID = get_rand();
 	playerList.forEach(user => client.users.cache.get(`${user.id}`).createDM());
 	playerList.forEach(user => client.users.cache.get(`${user.id}`).send(`${prompts[promptID].Prompt}`));
 	gameFlags.roundStarted = true;
@@ -197,7 +208,7 @@ function BeginRound() {
 }
 
 async function CountScores(answerPost) {
-
+	let gameEnded;
 	//signify users can vote
 	await answerPost.channel.send('begin voting!');
 	voted = [];
@@ -216,12 +227,12 @@ async function CountScores(answerPost) {
 	};
 
 	//listen to reaction votes.
-	const signUp = answerPost.createReactionCollector(filter, { time: 15000 });
+	const voting = answerPost.createReactionCollector(filter, { time: 15000 });
 	// eslint-disable-next-line no-unused-vars,no-empty-function
-	signUp.on('collect', async (reaction, user) => {});
+	voting.on('collect', async (reaction, user) => {});
 	//Export player list when finished/ready
 	// eslint-disable-next-line no-mixed-spaces-and-tabs
-	 signUp.on('end', async collected => {
+	voting.on('end', async collected => {
 		//collect votes into an array
 		const votes = collected.array();
 		if(votes.length === 0) {
@@ -270,10 +281,17 @@ async function CountScores(answerPost) {
 		const victorInd = playerList.findIndex(player => player.score >= 10);
 		if (victorInd !== -1) {
 			gameFlags.activeChannel.send(`Congratulations! ${client.users.cache.get(playerList[victorInd].id)} has proven they are the funniest!`);
-			return false;
+			gameEnded = true;
+			return Promise.resolve(gameEnded);
 		}
 		responses = [];
 		await gameFlags.activeChannel.send('starting a new round, keep an eye on those DMs');
-		return true;
+		gameEnded = false;
+		return Promise.resolve(gameEnded);
 	});
 }
+//todo: make random last between matches
+//todo: add prompt to the answer-sheet
+//todo: promise score counting
+//todo: no-reused emoji in rounds
+//todo: move czar on tie
