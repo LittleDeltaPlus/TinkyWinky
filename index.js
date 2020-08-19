@@ -1,8 +1,8 @@
 //-------------- Requires ---------------
 const fs = require('fs');
 const { prefix, token } = require('./config.json');
-const prompts = require('./prompts.json');
-const validEmoji = require('./emoji.json');
+const prompts = require('./assets/prompts.json');
+const validEmoji = require('./assets/emoji.json');
 const Discord = require('discord.js');
 const client = new Discord.Client();
 
@@ -19,7 +19,7 @@ client.once('ready', () => {
 	console.log('Over the hills and far away, TellyTubbies come out to play!');
 });
 
-client.login(token);
+client.login(token).catch(err => {console.error(err);});
 
 // ------------------------------------------
 //Global Variables
@@ -32,7 +32,7 @@ client.on('message', async message => {
 	//DM Handler
 	if(message.channel.type === 'dm' && gameVars.roundStarted && !message.author.bot &&
 		playerList.findIndex(player => player.id === message.author.id) !== -1) {
-		handleDM(message);
+		await handleDM(message);
 	}
 	//Reaction Handler
 	//return if the message isn't a command
@@ -71,8 +71,18 @@ client.on('message', async message => {
 	if(command === 'ready' && message.author.id === czar.id) {
 		signUpAccessor.end();
 	}
+	//Let's players Join Late
+	if(command === 'join' && gameVars.started === true) {
+		playerList.push({ id: message.author.id, score: 0 });
+	}
+	//Displays available commands
 	if(command === 'help') {
 		//ToDo: Create a default help embed.
+		const helpMessage = new Discord.MessageEmbed().setTitle('Hi there, I\'m TinkyWinky! Here are some commands to get you started!');
+		helpMessage.addField('Game Commands',
+			`**${prefix}start** - starts a game\n**${prefix}ready** - starts a game immediately if everyone is in\n**${prefix}join** - lets you join an ongoing game for the next round`,
+			false);
+		await message.channel.send(helpMessage);
 	}
 });
 
@@ -85,7 +95,7 @@ async function readResponses(message) {
 
 		//watch the embedded message to know when to append answers
 		const wait = message.createReactionCollector(filter, { time: 150000000 });
-		let i = 0;
+		let i = 1;
 		//log added users
 		wait.on('collect', async (reaction, user) => {
 			if(user.id !== client.user.id && user.id === czar.id) {
@@ -134,13 +144,13 @@ async function handleDM(message) {
 		//and the player hasn't given a response yet
 		responses.findIndex(response => response.authorId === message.author.id) === -1) {
 		//add their response and assign an emoji
-		responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[get_rand(validEmoji, assignedEmoji)].Emoji });
+		responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[get_rand(validEmoji, assignedEmoji)].emoji });
 	}
 	//when all responses are received, start displaying them
 	if (responses.length === playerList.length) {
 		await gameVars.activeChannel.send(`all ${responses.length} received!`);
 		//build the Embedded message to display the results
-		responseMessage = new Discord.MessageEmbed().setTitle(`Here are your answers to "${gameVars.currentPrompt}"`);
+		responseMessage = new Discord.MessageEmbed().setTitle(`Here are your answers to: "${gameVars.currentPrompt}"`);
 		responseMessage.addField(responses[0].emoji, responses[0].content, false);
 		//reset Emoji Catalogue
 		assignedEmoji = [];
@@ -156,7 +166,7 @@ async function handleSignup(message) {
 		qdReaction = null;
 		//filter hands up messages
 		// eslint-disable-next-line no-unused-vars
-		const filter = (reaction, user) => {return reaction.emoji.name === '\ud83d\ude4b';};
+		const filter = (reaction) => {return reaction.emoji.name === '\ud83d\ude4b';};
 		const signUp = message.createReactionCollector(filter, { time: 30000 });
 		//log added users
 		signUp.on('collect', (reaction, user) => {
@@ -166,9 +176,8 @@ async function handleSignup(message) {
 			}
 		});
 		//Export player list when finished/ready
-		// eslint-disable-next-line no-unused-vars
-		signUp.on('end', collected => {
-			if (playerList.length <= 0) {
+		signUp.on('end', function() {
+			if (playerList.length <= 1) {
 				//you can't play by yourself
 				message.channel.send('Signup ended with no players, game cancelled.');
 			}
@@ -209,7 +218,7 @@ function get_rand(catalogue, previous) {
 }
 
 function BeginRound() {
-	//get a random prompt ID that hasnt been used yet
+	//get a random prompt ID that hasn't been used yet
 	const promptID = get_rand(prompts, prevPrompts);
 	gameVars.currentPrompt = prompts[promptID].Prompt;
 	//Create a DM to all current players
@@ -239,10 +248,7 @@ async function CountScores(answerPost) {
 
 	//listen to reaction votes.
 	const voting = answerPost.createReactionCollector(filter, { time: 15000 });
-	// eslint-disable-next-line no-unused-vars,no-empty-function
-	voting.on('collect', async (reaction, user) => {});
 	//Export player list when finished/ready
-	// eslint-disable-next-line no-mixed-spaces-and-tabs
 	voting.on('end', async collected => {
 		//collect votes into an array
 		const votes = collected.array();
@@ -301,7 +307,8 @@ async function CountScores(answerPost) {
 	});
 }
 
-//todo: Misc. Global Variables -> Game Class
-//todo: Expand Valid emoji
-//todo: make random last between matches
+//ToDo: Misc. Global Variables -> Game Class
 //ToDo: testing & catching
+//ToDo: Commands as classes
+//ToDo: Kick command
+//ToDo: End command (apply to countScores)
