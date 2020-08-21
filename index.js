@@ -19,11 +19,11 @@ client.once('ready', () => {
 	console.log('Over the hills and far away, TellyTubbies come out to play!');
 });
 
-client.login(token).catch(err => {console.error(err);});
+client.login(token).catch(err => console.error(err));
 
 // ------------------------------------------
 //Global Variables
-let qdReaction = null, playerList = [], responses = [], czar, signUpAccessor, voted, assignedEmoji = [];
+let playerList = [], responses = [], czar, signUpAccessor, voted, assignedEmoji = [];
 const gameVars = { started: false, roundStarted: false, activeChannel: null, currentPrompt: null }, prevPrompts = [];
 let responseMessage;
 //listen for messages
@@ -32,18 +32,8 @@ client.on('message', async message => {
 	//DM Handler
 	if(message.channel.type === 'dm' && gameVars.roundStarted && !message.author.bot &&
 		playerList.findIndex(player => player.id === message.author.id) !== -1) {
-		await handleDM(message);
+		HandleDM(message).catch(err => console.error(err));
 	}
-	//Reaction Handler
-	//return if the message isn't a command
-	if(qdReaction !== null && message.author.id === client.user.id) {
-		await message.react(qdReaction);
-		//Handle HandsUp signup
-		await handleSignup(message);
-		//Handle Response Readout
-		await readResponses(message);
-	}
-
 	//Command Handler
 	//ignore messages that dont have the prefix, or aren't from this bot
 	if (!message.content.startsWith(prefix) || message.author.bot && !(message.author.id === client.user.id)) return;
@@ -60,20 +50,47 @@ client.on('message', async message => {
 		gameVars.started = true;
 		gameVars.activeChannel = message.channel;
 		playerList = [];
-		//enable Signup Handler
-		qdReaction = client.commands.get('start').execute(message, args);
 		//Note starting User (they're obviously playing)
 		czar = message.author;
-		console.log(`added ${czar.tag} to game list`);
-		playerList.push({ id: czar.id, score: 0 });
+		//enable Signup Handler
+		message.reply(' wants to start a game, react to this message with a \ud83d\ude4b to be included!').then(async sentMessage => {
+			await sentMessage.react('\ud83d\ude4b').then(function() {
+				HandleSignup(sentMessage).then(list => {
+					playerList = list;
+					BeginRound();
+				});
+			});
+		}).catch(err => console.error(err));
 	}
 	//Elapse signUp's timer
 	if(command === 'ready' && message.author.id === czar.id) {
 		signUpAccessor.end();
 	}
 	//Let's players Join Late
-	if(command === 'join' && gameVars.started === true) {
-		playerList.push({ id: message.author.id, score: 0 });
+	if(command === 'join') {
+		if(gameVars.started === true) {
+			playerList.push({ id: message.author.id, score: 0 });
+		}
+		else {
+			message.reply(`, sorry there's no games running at the minute. use the command ${prefix}start to start one!`)
+				.catch(err => console.error(err));
+		}
+	}
+	//remove a player from the game
+	if(command === 'kick') {
+		if(gameVars.started === true) {
+			for (const user of args) {
+				user.replace('@!', '');
+				KickUser(message, user);
+			}
+		}
+		else {
+			message.reply(`, sorry there's no games running at the minute. use the command ${prefix}start to start one!`)
+				.catch(err => console.error(err));
+		}
+	}
+	if(command === 'end') {
+		endGame();
 	}
 	//Displays available commands
 	if(command === 'help') {
@@ -87,64 +104,81 @@ client.on('message', async message => {
 });
 
 async function readResponses(message) {
-	if (qdReaction === '✅') {
-		qdReaction = null;
-		const filter = (reaction, user) => {
-			return ['✅'].includes(reaction.emoji.name) && user.id === czar.id || user.id === client.user.id;
-		};
-
-		//watch the embedded message to know when to append answers
-		const wait = message.createReactionCollector(filter, { time: 150000000 });
-		let i = 1;
-		//log added users
-		wait.on('collect', async (reaction, user) => {
-			if(user.id !== client.user.id && user.id === czar.id) {
-				//append response
-				responseMessage.addField(responses[i].emoji, `${responses[i].content}`, false);
-				i++;
-				//reset ready reaction
-				const userReactions = message.reactions.cache.filter(readyReaction => readyReaction.users.cache.has(czar.id));
-				try {
-					for (const removingReaction of userReactions.values()) {
-						await removingReaction.users.remove(czar.id);
-					}
+	const filter = (reaction, user) => {
+		return ['✅'].includes(reaction.emoji.name) && user.id === czar.id || user.id === client.user.id;
+	};
+	//watch the embedded message to know when to append answers
+	const wait = message.createReactionCollector(filter, { time: 150000000 });
+	let i = 1;
+	//log added users
+	wait.on('collect', async (reaction, user) => {
+		if(user.id !== client.user.id && user.id === czar.id) {
+			//append response
+			responseMessage.addField(responses[i].emoji, `${responses[i].content}`, false);
+			i++;
+			//reset ready reaction
+			const userReactions = message.reactions.cache.filter(readyReaction => readyReaction.users.cache.has(czar.id));
+			try {
+				for (const removingReaction of userReactions.values()) {
+					await removingReaction.users.remove(czar.id);
 				}
-				catch (error) {
-					console.error('Failed to remove reactions.');
-				}
-				//apply appended response
-				message.edit(responseMessage).then(async () => {
-					//if all answers have been displayed, start the voting
-					if (i >= responses.length) {
-						//wait for proceed reactions to be cleared
-						await message.reactions.removeAll().catch(error => console.error('Failed to clear reactions: ', error));
-						//add all response emojis in order of appearance
-						const emojiList = responses.map(response => response.emoji);
-						for (const emoji of emojiList) {
-							try{
-								await message.react(`${emoji}`);
-							}
-							catch (e) {
-								console.error(e);
-							}
-						}
-						//kill Listener
-						wait.stop();
-						await CountScores(message);
-					}
-				});
 			}
-		});
-	}
+			catch (error) {
+				console.error('Failed to remove reactions.');
+			}
+			//apply appended response
+			message.edit(responseMessage).then(async function() {
+				//if all answers have been displayed, start the voting
+				if (i >= responses.length) {
+					//wait for proceed reactions to be cleared
+					await message.reactions.removeAll().catch(error => console.error('Failed to clear reactions: ', error));
+					//add all response emojis in order of appearance
+					const emojiList = responses.map(response => response.emoji);
+					for (const emoji of emojiList) {
+						try{
+							await message.react(`${emoji}`);
+						}
+						catch (e) {
+							console.error(e);
+						}
+					}
+					//kill Listener
+					wait.stop();
+					CountScores(message).catch(err => console.error(err));
+				}
+			});
+		}
+	});
 }
 
-async function handleDM(message) {
+function KickUser(message, userID) {
+	const toKick = client.users.cache.get(`${userID}`);
+	message.channel.send(`${message.author} wants to kick ${toKick} those in favour, react with \ud83d\ude4b`).then(async sentMessage => {
+		await sentMessage.react('\ud83d\ude4b');
+		HeadCount('\ud83d\ude4b', sentMessage).then(collected => {
+			if(Math.floor(playerList.length / 2) + 1 <= collected.length) {
+				message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
+				try {
+					playerList.splice(playerList.indexOf(player => player.id === userID), 1);
+				}
+				catch (e) {
+					console.error(e);
+				}
+			}
+			else {
+				message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
+			}
+		});
+	});
+}
+
+async function HandleDM(message) {
 	//if the player is part of the game
 	if(playerList.findIndex(player => player.id === message.author.id) !== -1 &&
 		//and the player hasn't given a response yet
 		responses.findIndex(response => response.authorId === message.author.id) === -1) {
 		//add their response and assign an emoji
-		responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[get_rand(validEmoji, assignedEmoji)].emoji });
+		responses.push({ authorId: message.author.id, content: message.content, emoji: validEmoji[GetRand(validEmoji, assignedEmoji)].emoji });
 	}
 	//when all responses are received, start displaying them
 	if (responses.length === playerList.length) {
@@ -155,42 +189,54 @@ async function handleDM(message) {
 		//reset Emoji Catalogue
 		assignedEmoji = [];
 		//queue the proceed reaction
-		qdReaction = '✅';
 		gameVars.roundStarted = false;
-		gameVars.activeChannel.send(responseMessage);
+		gameVars.activeChannel.send(responseMessage).then(async sentMessage => {
+			await sentMessage.react('✅').then(function() {
+				readResponses(sentMessage);
+			});
+		});
 	}
 }
 
-async function handleSignup(message) {
-	if (qdReaction === '\ud83d\ude4b') {
-		qdReaction = null;
+async function HandleSignup(message) {
+	return new Promise(resolve => {
 		//filter hands up messages
-		// eslint-disable-next-line no-unused-vars
-		const filter = (reaction) => {return reaction.emoji.name === '\ud83d\ude4b';};
-		const signUp = message.createReactionCollector(filter, { time: 30000 });
-		//log added users
-		signUp.on('collect', (reaction, user) => {
-			if(user.id !== client.user.id && user.id !== czar.id) {
-				console.log(`added ${user.tag} to game list`);
-				playerList.push({ id: user.id, score: 0 });
+		HeadCount('\ud83d\ude4b', message).then(collectedUsers => {
+			const tempList = [];
+			for(const user of collectedUsers) {
+				tempList.push({ id: user.id, score: 0 });
 			}
-		});
-		//Export player list when finished/ready
-		signUp.on('end', function() {
-			if (playerList.length <= 1) {
+			if(tempList.findIndex(player => player.id === czar.id) === -1) {
+				tempList.push({ id: czar.id, score: 0 });
+			}
+			if (tempList.length <= 1) {
 				//you can't play by yourself
-				message.channel.send('Signup ended with no players, game cancelled.');
+				message.channel.send('Signup ended with one player, game cancelled.').catch(err => console.error(err));
 			}
-			else if (playerList.length >= 24) {
+			else if (tempList.length >= 24) {
 				//too many players wont fit in one Embedded message
-				message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!');
+				message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
 			}
 			else {
 				//start game
-				console.log(`game starting with: ${playerList.length} players`);
-				message.channel.send(`Great! Game starting with ${playerList.length} players.`);
-				BeginRound();
+				console.log(`game starting with: ${tempList.length} players`);
+				message.channel.send(`Great! Game starting with ${tempList.length} players.`).catch(err => console.error(err));
+				resolve(tempList);
 			}
+		});
+	});
+}
+
+
+function HeadCount(focusedEmoji, message) {
+	return new Promise(function(resolve) {
+		const filter = (reaction) => {return reaction.emoji.name === focusedEmoji;};
+		const signUp = message.createReactionCollector(filter, { time: 30000 });
+		//Export player list when finished/ready
+		signUp.on('end', collected => {
+			const collectedUsers = collected.array()[0].users.cache.array();
+			collectedUsers.splice(collectedUsers.findIndex(user => user.id === client.user.id), 1);
+			resolve(collectedUsers);
 		});
 		//Allow signUp to be stopped by an external command
 		signUpAccessor = {
@@ -198,10 +244,10 @@ async function handleSignup(message) {
 				signUp.stop();
 			},
 		};
-	}
+	});
 }
 
-function get_rand(catalogue, previous) {
+function GetRand(catalogue, previous) {
 	//If all numbers have been used reset.
 	if (previous.length === catalogue.length) {
 		previous = [];
@@ -214,16 +260,17 @@ function get_rand(catalogue, previous) {
 		return rand;
 	}
 	//else generate new number
-	return get_rand();
+	return GetRand();
 }
 
 function BeginRound() {
 	//get a random prompt ID that hasn't been used yet
-	const promptID = get_rand(prompts, prevPrompts);
+	const promptID = GetRand(prompts, prevPrompts);
 	gameVars.currentPrompt = prompts[promptID].Prompt;
 	//Create a DM to all current players
 	playerList.forEach(user => client.users.cache.get(`${user.id}`).createDM());
 	playerList.forEach(user => client.users.cache.get(`${user.id}`).send(`${gameVars.currentPrompt}`));
+	gameVars.activeChannel.send(`Your Next prompt is:  **${gameVars.currentPrompt}**`);
 	//Enable DM handler
 	gameVars.roundStarted = true;
 }
@@ -296,19 +343,40 @@ async function CountScores(answerPost) {
 				console.log(e);
 			}
 		}
-		const victorInd = playerList.findIndex(player => player.score >= 10);
-		if (victorInd !== -1) {
-			gameVars.activeChannel.send(`Congratulations! ${client.users.cache.get(playerList[victorInd].id)} has proven they are the funniest!`);
-			gameVars.started = false;
+		const victors = playerList.filter(player => player.score >= 10);
+		if (victors.length !== 0) {
+			endGame();
 		}
 		responses = [];
 		await gameVars.activeChannel.send('starting a new round, keep an eye on those DMs');
+		await Sleep(5000);
 		return BeginRound();
 	});
+}
+function Sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function endGame() {
+	//Find the max reaction (vote) count
+	const winner = playerList.reduce((prev, current) => (prev.score > current.score) ? prev : current);
+	//See if there is a tie
+	const matching = playerList.filter(player => player.score === winner.score);
+	if(matching.length === 1) {
+		gameVars.activeChannel.send(`Congratulations! ${client.users.cache.get(matching[0].id)} has proven they are the funniest!`);
+		gameVars.started = false;
+	}
+	if(matching.length > 1) {
+		for (const coWinner of matching) {
+			gameVars.activeChannel.send(`${client.users.cache.get(coWinner.id)} have proven they are joint funniest!`);
+		}
+		gameVars.activeChannel.send(`each with a score of ${matching[0].score}`).catch(err => console.error(err));
+		gameVars.started = false;
+	}
 }
 
 //ToDo: Misc. Global Variables -> Game Class
 //ToDo: testing & catching
-//ToDo: Commands as classes
-//ToDo: Kick command
+//ToDo: Commands as classes?
 //ToDo: End command (apply to countScores)
+//ToDo: move Commands to /commands & maybe also message Handler?
