@@ -24,7 +24,6 @@
     "no-lonely-if": "error",
     "no-multi-spaces": "error",
     "no-shadow": ["error", { "allow": ["err", "resolve", "reject"] }],
-    "no-trailing-spaces": ["error"],
     "no-var": "error",
     "object-curly-spacing": ["error", "always"],
     "prefer-const": "error",

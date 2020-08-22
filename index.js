@@ -21,12 +21,12 @@ client.once('ready', () => {
 
 client.login(token).catch(err => console.error(err));
 
-// ------------------------------------------
-//Global Variables
+//-------------- Global Variables ---------------
 let playerList = [], responses = [], czar, signUpAccessor, voted, assignedEmoji = [];
 const gameVars = { started: false, roundStarted: false, activeChannel: null, currentPrompt: null }, prevPrompts = [];
 let responseMessage;
-//listen for messages
+
+//-------------- Message Handler ---------------
 client.on('message', async message => {
 
 	//DM Handler
@@ -34,14 +34,14 @@ client.on('message', async message => {
 		playerList.findIndex(player => player.id === message.author.id) !== -1) {
 		HandleDM(message).catch(err => console.error(err));
 	}
+
 	//Command Handler
 	//ignore messages that dont have the prefix, or aren't from this bot
-	if (!message.content.startsWith(prefix) || message.author.bot && !(message.author.id === client.user.id)) return;
+	if (!message.content.startsWith(prefix) || message.author.bot && !(message.author.id === client.user.id) || message.channel.type === 'dm') return;
 	//split the message string into arguments
 	const args = message.content.slice(prefix.length).split(/ +/);
 	//remove the first argument (the command) and store it as a lowercase string
 	const command = args.shift().toLowerCase();
-
 
 	//**Commands**
 	//Start Game command
@@ -54,11 +54,9 @@ client.on('message', async message => {
 		czar = message.author;
 		//enable Signup Handler
 		message.reply(' wants to start a game, react to this message with a \ud83d\ude4b to be included!').then(async sentMessage => {
-			await sentMessage.react('\ud83d\ude4b').then(function() {
-				HandleSignup(sentMessage).then(list => {
-					playerList = list;
-					BeginRound();
-				});
+			HandleSignup(sentMessage).then(list => {
+				playerList = list;
+				BeginRound();
 			});
 		}).catch(err => console.error(err));
 	}
@@ -69,7 +67,11 @@ client.on('message', async message => {
 	//Let's players Join Late
 	if(command === 'join') {
 		if(gameVars.started === true) {
-			playerList.push({ id: message.author.id, score: 0 });
+			if(gameVars.roundStarted === true) {
+				client.users.cache.get(`${message.author.id}`).createDM().catch(err => console.error(err));
+				client.users.cache.get(`${message.author.id}`).send(`${gameVars.currentPrompt}`).catch(err => console.error(err));
+			}
+			await playerList.push({ id: message.author.id, score: 0 });
 		}
 		else {
 			message.reply(`, sorry there's no games running at the minute. use the command ${prefix}start to start one!`)
@@ -89,65 +91,70 @@ client.on('message', async message => {
 				.catch(err => console.error(err));
 		}
 	}
-	if(command === 'end') {
+	if(command === 'end' && message.author.id === czar.id) {
 		endGame();
 	}
 	//Displays available commands
 	if(command === 'help') {
-		//ToDo: Create a default help embed.
 		const helpMessage = new Discord.MessageEmbed().setTitle('Hi there, I\'m TinkyWinky! Here are some commands to get you started!');
 		helpMessage.addField('Game Commands',
-			`**${prefix}start** - starts a game\n**${prefix}ready** - starts a game immediately if everyone is in\n**${prefix}join** - lets you join an ongoing game for the next round`,
+			`**${prefix}start** - starts a game
+			**${prefix}ready** - starts a game immediately if everyone is in
+			**${prefix}join** - lets you join an ongoing game for the next round
+			**${prefix}kick @user** - starts a vote to remove a player from the game`,
 			false);
 		await message.channel.send(helpMessage);
 	}
 });
 
+// A function that reads the collected responses one at a time, waiting for user input
 async function readResponses(message) {
-	const filter = (reaction, user) => {
-		return ['✅'].includes(reaction.emoji.name) && user.id === czar.id || user.id === client.user.id;
-	};
-	//watch the embedded message to know when to append answers
-	const wait = message.createReactionCollector(filter, { time: 150000000 });
-	let i = 1;
-	//log added users
-	wait.on('collect', async (reaction, user) => {
-		if(user.id !== client.user.id && user.id === czar.id) {
-			//append response
-			responseMessage.addField(responses[i].emoji, `${responses[i].content}`, false);
-			i++;
-			//reset ready reaction
-			const userReactions = message.reactions.cache.filter(readyReaction => readyReaction.users.cache.has(czar.id));
-			try {
-				for (const removingReaction of userReactions.values()) {
-					await removingReaction.users.remove(czar.id);
-				}
-			}
-			catch (error) {
-				console.error('Failed to remove reactions.');
-			}
-			//apply appended response
-			message.edit(responseMessage).then(async function() {
-				//if all answers have been displayed, start the voting
-				if (i >= responses.length) {
-					//wait for proceed reactions to be cleared
-					await message.reactions.removeAll().catch(error => console.error('Failed to clear reactions: ', error));
-					//add all response emojis in order of appearance
-					const emojiList = responses.map(response => response.emoji);
-					for (const emoji of emojiList) {
-						try{
-							await message.react(`${emoji}`);
-						}
-						catch (e) {
-							console.error(e);
-						}
+	message.react('✅').then(function() {
+		const filter = (reaction, user) => {
+			return ['✅'].includes(reaction.emoji.name) && user.id === czar.id || user.id === client.user.id;
+		};
+		//watch the embedded message to know when to append answers
+		const wait = message.createReactionCollector(filter, { dispose: true });
+		let i = 1;
+		//log added users
+		wait.on('collect', async (reaction, user) => {
+			if(user.id !== client.user.id && user.id === czar.id) {
+				//append response
+				responseMessage.addField(responses[i].emoji, `${responses[i].content}`, false);
+				i++;
+				//reset ready reaction
+				const userReactions = message.reactions.cache.filter(readyReaction => readyReaction.users.cache.has(czar.id));
+				try {
+					for (const removingReaction of userReactions.values()) {
+						await removingReaction.users.remove(czar.id);
 					}
-					//kill Listener
-					wait.stop();
-					CountScores(message).catch(err => console.error(err));
 				}
-			});
-		}
+				catch (error) {
+					console.error('Failed to remove reactions.');
+				}
+				//apply appended response
+				message.edit(responseMessage).then(async function() {
+					//if all answers have been displayed, start the voting
+					if (i >= responses.length) {
+						//wait for proceed reactions to be cleared
+						await message.reactions.removeAll().catch(error => console.error('Failed to clear reactions: ', error));
+						//add all response emojis in order of appearance
+						const emojiList = responses.map(response => response.emoji);
+						for (const emoji of emojiList) {
+							try{
+								await message.react(`${emoji}`);
+							}
+							catch (e) {
+								console.error(e);
+							}
+						}
+						//kill Listener
+						wait.stop();
+						CountScores(message).catch(err => console.error(err));
+					}
+				});
+			}
+		});
 	});
 }
 
@@ -182,47 +189,47 @@ async function HandleDM(message) {
 	}
 	//when all responses are received, start displaying them
 	if (responses.length === playerList.length) {
+		gameVars.roundStarted = false;
 		await gameVars.activeChannel.send(`all ${responses.length} received!`);
 		//build the Embedded message to display the results
 		responseMessage = new Discord.MessageEmbed().setTitle(`Here are your answers to: "${gameVars.currentPrompt}"`);
 		responseMessage.addField(responses[0].emoji, responses[0].content, false);
-		//reset Emoji Catalogue
-		assignedEmoji = [];
-		//queue the proceed reaction
-		gameVars.roundStarted = false;
 		gameVars.activeChannel.send(responseMessage).then(async sentMessage => {
-			await sentMessage.react('✅').then(function() {
-				readResponses(sentMessage);
-			});
+			//reset Emoji Catalogue
+			assignedEmoji = [];
+			//read the rest of the responses
+			readResponses(sentMessage).catch(err => console.error(err));
 		});
 	}
 }
 
 async function HandleSignup(message) {
 	return new Promise(resolve => {
+		message.react('\ud83d\ude4b').then(function() {
 		//filter hands up messages
-		HeadCount('\ud83d\ude4b', message).then(collectedUsers => {
-			const tempList = [];
-			for(const user of collectedUsers) {
-				tempList.push({ id: user.id, score: 0 });
-			}
-			if(tempList.findIndex(player => player.id === czar.id) === -1) {
-				tempList.push({ id: czar.id, score: 0 });
-			}
-			if (tempList.length <= 1) {
-				//you can't play by yourself
-				message.channel.send('Signup ended with one player, game cancelled.').catch(err => console.error(err));
-			}
-			else if (tempList.length >= 24) {
-				//too many players wont fit in one Embedded message
-				message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
-			}
-			else {
-				//start game
-				console.log(`game starting with: ${tempList.length} players`);
-				message.channel.send(`Great! Game starting with ${tempList.length} players.`).catch(err => console.error(err));
-				resolve(tempList);
-			}
+			HeadCount('\ud83d\ude4b', message).then(collectedUsers => {
+				const tempList = [];
+				for(const user of collectedUsers) {
+					tempList.push({ id: user.id, score: 0 });
+				}
+				if(tempList.findIndex(player => player.id === czar.id) === -1) {
+					tempList.push({ id: czar.id, score: 0 });
+				}
+				if (tempList.length <= 1) {
+					//you can't play by yourself
+					message.channel.send('Signup ended with one player, game cancelled.').catch(err => console.error(err));
+				}
+				else if (tempList.length >= 24) {
+					//too many players wont fit in one Embedded message
+					message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
+				}
+				else {
+					//start game
+					console.log(`game starting with: ${tempList.length} players`);
+					message.channel.send(`Great! Game starting with ${tempList.length} players.`).catch(err => console.error(err));
+					resolve(tempList);
+				}
+			});
 		});
 	});
 }
@@ -250,7 +257,7 @@ function HeadCount(focusedEmoji, message) {
 function GetRand(catalogue, previous) {
 	//If all numbers have been used reset.
 	if (previous.length === catalogue.length) {
-		previous = [];
+		previous.splice(0, previous.length);
 	}
 	//Generate random number
 	const rand = Math.floor((Math.random() * catalogue.length) + 1);
@@ -374,9 +381,3 @@ function endGame() {
 		gameVars.started = false;
 	}
 }
-
-//ToDo: Misc. Global Variables -> Game Class
-//ToDo: testing & catching
-//ToDo: Commands as classes?
-//ToDo: End command (apply to countScores)
-//ToDo: move Commands to /commands & maybe also message Handler?
