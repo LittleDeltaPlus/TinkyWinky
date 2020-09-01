@@ -5,7 +5,7 @@ module.exports = {
 	description: 'starts a vote to kick a user from an active game',
 	execute(message, args, game) {
 		return new Promise(resolve => {
-			if(game.started === true) {
+			if(game !== null && game.started === true) {
 				for (const user of args) {
 					user.replace('@!', '');
 					game.KickUser(message, user, game);

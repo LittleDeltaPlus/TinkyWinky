@@ -2,7 +2,6 @@
 const fs = require('fs');
 const { prefix, token } = require('./config.json');
 const Discord = require('discord.js');
-//const resolve = require('eslint');
 const client = new Discord.Client();
 
 //-------------- Start-Up ---------------
@@ -22,15 +21,16 @@ client.login(token).catch(err => console.error(err));
 
 //-------------- Global Variables ---------------
 const instances = [];
-// let playerList = [], responses = [], czar, signUpAccessor, voted, assignedEmoji = [];
-// const gameVars = { started: false, roundStarted: false, activeChannel: null, currentPrompt: null }, prevPrompts = [];
-// let responseMessage;
-
 //-------------- Message Handler ---------------
 client.on('message', async message => {
-	const game = findGame(message);
+	let game = findGame(message);
+
+	if(game !== null && game.selfDesctruct) {
+		instances.splice(instances.indexOf(instance => instance.activeChannel === game.activeChannel), 1);
+		game = null;
+	}
 	//DM Handler
-	if(game !== null && message.channel.type === 'dm' && game.roundStarted && !message.author.bot) {
+	if(game !== null && game.roundStarted && message.channel.type === 'dm' && !message.author.bot) {
 		HandleDM(message).catch(err => console.error(err));
 	}
 
@@ -41,14 +41,21 @@ client.on('message', async message => {
 	const args = message.content.slice(prefix.length).split(/ +/);
 	//remove the first argument (the command) and store it as a lowercase string
 	const command = args.shift().toLowerCase();
-
-	//**Commands**
-	//Start Game command
-	client.commands.get(`${command}`).execute(message).catch(function() {message.channel.send(`Command not found, try ${prefix}help for a list of commands`);});
-
+	// Pass these to the handler
+	client.commands.get(`${command}`).execute(message, args, game).then(newGame => {
+		if(newGame === null) {
+			if(game) {
+				game.end();
+				instances.splice(instances.indexOf(instance => instance.activeChannel = game.activeChannel), 1);
+			}
+		}
+		else if(newGame) {
+			instances.push(newGame);
+		}
+	})
+		.catch(err => {console.error(err); message.channel.send(`Command not found, try ${prefix}help for a list of commands`);});
 
 });
-
 
 
 async function HandleDM(message, game) {
@@ -63,7 +70,7 @@ async function HandleDM(message, game) {
 
 
 function findGame(message) {
-	const gameIndex = instances.indexOf(game => game.activeChannel.id === message.channel.id);
+	const gameIndex = instances.map(instance => {return instance.activeChannel;}).indexOf(message.channel);
 	if(gameIndex === -1) {
 		return null;
 	}

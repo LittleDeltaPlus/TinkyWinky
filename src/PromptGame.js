@@ -1,6 +1,5 @@
 const Round = require('./round');
 const Discord = require('discord.js');
-module.exports = promptGame;
 class promptGame {
 	constructor(message) {
 		this.activeChannel = message.channel;
@@ -10,13 +9,19 @@ class promptGame {
 		this.prevPrompts = [];
 		this.signUpAccessor = null;
 		this.currentRound = null;
+		this.selfDesctruct = false;
 
 		message.reply(' wants to start a game, react to this message with a \ud83d\ude4b to be included!').then(async sentMessage => {
-			this.HandleSignup(sentMessage).then(list => {
-				this.playerList = list;
-				return this.BeginRound();
-			});
+			return this.startGame(sentMessage);
 		}).catch(err => console.error(err));
+	}
+
+	startGame(message) {
+		const game = this;
+		this.HandleSignup(message).then(list => {
+			game.playerList = list;
+			return game.BeginRound();
+		}).catch(err => { console.log(err); game.selfDesctruct = true; });
 	}
 
 	addResponse(message) {
@@ -37,24 +42,28 @@ class promptGame {
 	}
 
 	async HandleSignup(message) {
-		return new Promise(resolve => {
+		const game = this;
+		const czar = this.czar;
+		return new Promise((resolve, reject) => {
 			message.react('\ud83d\ude4b').then(function() {
 				//filter hands up messages
-				HeadCount('\ud83d\ude4b', message, this.signUpAccessor).then(collectedUsers => {
+				game.HeadCount('\ud83d\ude4b', message).then(collectedUsers => {
 					const tempList = [];
 					for(const user of collectedUsers) {
 						tempList.push({ id: user.id, score: 0 });
 					}
-					if(tempList.findIndex(player => player.id === this.czar.id) === -1) {
-						tempList.push({ id: this.czar.id, score: 0 });
+					if(tempList.findIndex(player => player.id === czar.id) === -1) {
+						tempList.push({ id: czar.id, score: 0 });
 					}
 					if (tempList.length <= 1) {
 						//you can't play by yourself
 						message.channel.send('Signup ended with one player, game cancelled.').catch(err => console.error(err));
+						reject();
 					}
 					else if (tempList.length >= 24) {
 						//too many players wont fit in one Embedded message
 						message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
+						reject();
 					}
 					else {
 						//start game
@@ -70,8 +79,8 @@ class promptGame {
 	BeginRound() {
 		this.currentRound = new Round(this.prevPrompts);
 		//Create a DM to all current players
-		this.playerList.forEach(user => Discord.client.users.cache.get(`${user.id}`).createDM());
-		this.playerList.forEach(user => Discord.client.users.cache.get(`${user.id}`).send(`${this.currentRound.currentPrompt}`));
+		this.playerList.forEach(user => Discord.client.users.fetch(`${user.id}`, true).createDM());
+		this.playerList.forEach(user => Discord.client.users.fetch(`${user.id}`).send(`${this.currentRound.currentPrompt}`));
 		this.activeChannel.send(`Your Next prompt is:  **${this.currentRound.currentPrompt}**`);
 	}
 
@@ -84,7 +93,7 @@ class promptGame {
 		const toKick = Discord.client.users.cache.get(`${userID}`);
 		message.channel.send(`${message.author} wants to kick ${toKick} those in favour, react with \ud83d\ude4b`).then(async sentMessage => {
 			await sentMessage.react('\ud83d\ude4b');
-			HeadCount('\ud83d\ude4b', sentMessage).then(collected => {
+			this.HeadCount('\ud83d\ude4b', sentMessage).then(collected => {
 				if(Math.floor(this.playerList.length / 2) + 1 <= collected.length) {
 					message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
 					try {
@@ -155,29 +164,34 @@ class promptGame {
 			});
 		}).catch(err => console.error(err));
 	}
-}
 
-function HeadCount(focusedEmoji, message, signUpAccessor) {
-	return new Promise(function(resolve) {
-		const filter = (reaction) => {return reaction.emoji.name === focusedEmoji;};
-		const signUp = message.createReactionCollector(filter, { time: 30000 });
-		//Export player list when finished/ready
-		signUp.on('end', collected => {
-			const collectedUsers = collected.array()[0].users.cache.array();
-			collectedUsers.splice(collectedUsers.findIndex(user => user.id === Discord.client.user.id), 1);
-			resolve(collectedUsers);
-		});
-		//Allow signUp to be stopped by an external command
-		if (typeof signUpAccessor !== 'undefined') {
-			signUpAccessor = {
+	HeadCount(focusedEmoji, message) {
+		const game = this;
+		return new Promise(function(resolve) {
+			const filter = (reaction) => {return reaction.emoji.name === focusedEmoji;};
+			const signUp = message.createReactionCollector(filter, { time: 30000 });
+			//Allow signUp to be stopped by an external command
+			game.signUpAccessor = {
 				end: function() {
 					signUp.stop();
 				},
 			};
-		}
-	});
+			//Export player list when finished/ready
+			signUp.on('end', collected => {
+				if(collected) {
+					const collectedUsers = collected.array()[0].users.cache.array();
+					collectedUsers.splice(collectedUsers.findIndex(user => user.id === Discord.ClientUser.id), 1);
+					resolve(collectedUsers);
+				}
+			});
+		});
+	}
 }
+
+
 
 function Sleep(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+module.exports = promptGame;

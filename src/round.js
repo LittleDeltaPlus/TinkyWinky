@@ -1,7 +1,6 @@
 const prompts = require('../assets/prompts.json');
 const validEmoji = require('../assets/emoji.json');
 const Discord = require('discord.js');
-module.exports = Round;
 class Round {
 	constructor(prevPrompts) {
 		this.assignedEmoji = [];
@@ -123,3 +122,5 @@ function GetRand(catalogue, previous) {
 	//else generate new number
 	return GetRand();
 }
+
+module.exports = Round;
