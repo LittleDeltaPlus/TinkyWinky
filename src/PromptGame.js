@@ -1,6 +1,7 @@
 const Round = require('./round');
 const Discord = require('discord.js');
 class promptGame {
+
 	constructor(message) {
 		this.activeChannel = message.channel;
 		this.czar = message.author;
@@ -10,7 +11,7 @@ class promptGame {
 		this.signUpAccessor = null;
 		this.currentRound = null;
 		this.selfDesctruct = false;
-
+		this.client = null;
 		message.reply(' wants to start a game, react to this message with a \ud83d\ude4b to be included!').then(async sentMessage => {
 			return this.startGame(sentMessage);
 		}).catch(err => console.error(err));
@@ -79,9 +80,12 @@ class promptGame {
 	BeginRound() {
 		this.currentRound = new Round(this.prevPrompts);
 		//Create a DM to all current players
-		this.playerList.forEach(user => Discord.client.users.fetch(`${user.id}`, true).createDM());
-		this.playerList.forEach(user => Discord.client.users.fetch(`${user.id}`).send(`${this.currentRound.currentPrompt}`));
-		this.activeChannel.send(`Your Next prompt is:  **${this.currentRound.currentPrompt}**`);
+		this.playerList.forEach(async user =>
+			await this.client.users.cache.get(`${user.id}`).createDM()
+				.then(this.client.users.cache.get(`${user.id}`).send(`${this.currentRound.currentPrompt}`))
+				.catch(err => console.error(err)));
+		//this.playerList.forEach(async user => await this.client.users.cache.get(`${user.id}`).send(`${this.currentRound.currentPrompt}`).catch(err => console.error(err)));
+		this.activeChannel.send(`Your Next prompt is:  **${this.currentRound.currentPrompt}**`).catch(err => console.error(err));
 	}
 
 	async endRound() {
@@ -180,7 +184,7 @@ class promptGame {
 			signUp.on('end', collected => {
 				if(collected) {
 					const collectedUsers = collected.array()[0].users.cache.array();
-					collectedUsers.splice(collectedUsers.findIndex(user => user.id === Discord.ClientUser.id), 1);
+					collectedUsers.splice(collectedUsers.findIndex(user => user.id === game.client.user.id), 1);
 					resolve(collectedUsers);
 				}
 			});

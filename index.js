@@ -51,12 +51,14 @@ client.on('message', async message => {
 		}
 		else if(newGame) {
 			instances.push(newGame);
+			newGame.client = client;
+			//newGame.playerList.splice(newGame.playerList.indexOf(user => user.id === client.user.id), 1);
+
 		}
 	})
 		.catch(err => {console.error(err); message.channel.send(`Command not found, try ${prefix}help for a list of commands`);});
 
 });
-
 
 async function HandleDM(message, game) {
 	//if the player is part of the game
