@@ -23,16 +23,11 @@ client.login(token).catch(err => console.error(err));
 const instances = [];
 //-------------- Message Handler ---------------
 client.on('message', async message => {
-	let game = findGame(message);
+	//Find the game that the message belongs to
+	const game = findGame(message);
 
-	if(game !== null && game.selfDesctruct) {
-		instances.splice(instances.indexOf(instance => instance.activeChannel === game.activeChannel), 1);
-		game = null;
-	}
-	//DM Handler
-	if(game !== null && game.roundStarted && message.channel.type === 'dm' && !message.author.bot) {
-		HandleDM(message).catch(err => console.error(err));
-	}
+	//Try processing it as a DM
+	HandleDM(message, game).catch(err => console.error(err));
 
 	//Command Handler
 	//ignore messages that dont have the prefix, or aren't from this bot
@@ -41,26 +36,31 @@ client.on('message', async message => {
 	const args = message.content.slice(prefix.length).split(/ +/);
 	//remove the first argument (the command) and store it as a lowercase string
 	const command = args.shift().toLowerCase();
-	// Pass these to the handler
-	client.commands.get(`${command}`).execute(message, args, game).then(newGame => {
+	// Collect them and pass these to the handler
+	const argumentJSON = { message: message, arguments: args, game: game };
+
+	await ExecuteCommand(command, argumentJSON);
+
+});
+
+async function ExecuteCommand(command, JSON) {
+	client.commands.get(`${command}`).execute(JSON).then(newGame => {
 		if(newGame === null) {
-			if(game) {
-				game.end();
-				instances.splice(instances.indexOf(instance => instance.activeChannel = game.activeChannel), 1);
+			if(JSON.game) {
+				JSON.game.end();
+				instances.splice(instances.indexOf(instance => instance.activeChannel = JSON.game.activeChannel), 1);
 			}
 		}
 		else if(newGame) {
 			instances.push(newGame);
 			newGame.client = client;
-			//newGame.playerList.splice(newGame.playerList.indexOf(user => user.id === client.user.id), 1);
-
 		}
 	})
-		.catch(err => {console.error(err); message.channel.send(`Command not found, try ${prefix}help for a list of commands`);});
-
-});
+		.catch(err => {console.error(err); JSON.message.channel.send(`Command not found, try ${prefix}help for a list of commands`);});
+}
 
 async function HandleDM(message, game) {
+	if(game === null || !game.roundStarted || message.channel.type !== 'dm' || message.author.bot) return;
 	//if the player is part of the game
 	if(game.playerList.findIndex(player => player.id === message.author.id) !== -1 &&
 		//and the player hasn't given a response yet
@@ -73,10 +73,18 @@ async function HandleDM(message, game) {
 
 function findGame(message) {
 	const gameIndex = instances.map(instance => {return instance.activeChannel;}).indexOf(message.channel);
+	let game;
 	if(gameIndex === -1) {
 		return null;
 	}
 	else {
-		return instances[gameIndex];
+		game = instances[gameIndex];
+		//If it's marked for destruction don't bother passing it back.
+		if(game.selfDesctruct) {
+			instances.splice(instances.indexOf(instance => instance.activeChannel === game.activeChannel), 1);
+			return null;
+		}
+		return game;
 	}
+
 }

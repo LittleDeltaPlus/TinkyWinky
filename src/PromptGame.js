@@ -61,9 +61,9 @@ class promptGame {
 						message.channel.send('Signup ended with one player, game cancelled.').catch(err => console.error(err));
 						reject();
 					}
-					else if (tempList.length >= 24) {
+					else if (tempList.length >= 20) {
 						//too many players wont fit in one Embedded message
-						message.channel.send('Signup ended with 24+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
+						message.channel.send('Signup ended with 19+ players, game cancelled. I\'m sorry there\'s just too many of you!').catch(err => console.error(err));
 						reject();
 					}
 					else {
@@ -84,7 +84,6 @@ class promptGame {
 			await this.client.users.cache.get(`${user.id}`).createDM()
 				.then(this.client.users.cache.get(`${user.id}`).send(`${this.currentRound.currentPrompt}`))
 				.catch(err => console.error(err)));
-		//this.playerList.forEach(async user => await this.client.users.cache.get(`${user.id}`).send(`${this.currentRound.currentPrompt}`).catch(err => console.error(err)));
 		this.activeChannel.send(`Your Next prompt is:  **${this.currentRound.currentPrompt}**`).catch(err => console.error(err));
 	}
 
@@ -136,27 +135,19 @@ class promptGame {
 		const nextRound = this.BeginRound();
 		this.currentRound.Score(this.playerList).then((winners, count) => {
 			if(winners.length === 1) {
-				try {
-					this.playerList[winners].score += 1;
-					this.czar = Discord.client.users.cache.get(`${this.playerList[winners].id}`);
-					this.activeChannel.send(`the winner with ${count - 1} votes is... ${this.czar}, their current score is: ${this.playerList[winners].score}!`);
-					console.log(`${this.czar.tag} gained a point, giving them ${this.playerList[winners].score}`);
-				}
-				catch (e) {
-					console.log(e);
-				}
+				this.playerList[winners].score += 1;
+				this.czar = Discord.client.users.cache.get(`${this.playerList[winners].id}`);
+				this.activeChannel.send(`the winner with ${count - 1} votes is... ${this.czar}, their current score is: ${this.playerList[winners].score}!`);
+				console.log(`${this.czar.tag} gained a point, giving them ${this.playerList[winners].score}`);
+
 			}
 			else {
-				try {
-					this.activeChannel.send('The winners of this round are...');
-					for (const coWinner of winners) {
-						this.activeChannel.send(`${Discord.client.users.cache.get(this.playerList[coWinner].id)} with a score of ${this.playerList[coWinner].score}`);
-					}
-					this.czar = Discord.client.users.cache.get(`${winners[0].id}`);
+				this.activeChannel.send('The winners of this round are...');
+				for (const coWinner of winners) {
+					this.activeChannel.send(`${Discord.client.users.cache.get(this.playerList[coWinner].id)} with a score of ${this.playerList[coWinner].score}`);
 				}
-				catch (e) {
-					console.log(e);
-				}
+				this.czar = Discord.client.users.cache.get(`${winners[0].id}`);
+
 			}
 			const victors = this.playerList.filter(player => player.score >= 10);
 			if (victors.length !== 0) {
