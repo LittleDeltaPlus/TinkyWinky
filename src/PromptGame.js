@@ -17,29 +17,26 @@ class promptGame {
 		}).catch(err => console.error(err));
 	}
 
-	startGame(message) {
-		const game = this;
-		this.HandleSignup(message).then(list => {
-			game.playerList = list;
-			return game.BeginRound();
-		}).catch(err => { console.log(err); game.selfDesctruct = true; });
+	async startGame(message) {
+		this.playerList = await this.HandleSignup(message)
+			.catch(err => { console.log(err); this.selfDesctruct = true; });
+		return this.BeginRound();
 	}
 
-	addResponse(message) {
-		this.currentRound.addResponse(message).then(newLength => {
-			//when all responses are received, start displaying them
-			if (newLength === this.playerList.length) {
-				this.roundStarted = false;
-				this.activeChannel.send(`all ${newLength} received!`);
-				//build the Embedded message to display the results
-				this.currentRound.answerPost = new Discord.MessageEmbed().setTitle(`Here are your answers to: "${this.currentRound.currentPrompt}"`);
-				this.currentRound.answerPost.addField(this.currentRound.responses[0].emoji, this.currentRound.responses[0].content, false);
-				this.activeChannel.send(this.currentRound.answerPost).then(() => {
-					//read the rest of the responses
-					return this.endRound();
-				});
-			}
-		});
+	async addResponse(message) {
+		const newLength = await this.currentRound.addResponse(message).catch(err => console.error(err));
+		//when all responses are received, start displaying them
+		if (newLength === this.playerList.length) {
+			this.roundStarted = false;
+			this.activeChannel.send(`all ${newLength} received!`);
+			//build the Embedded message to display the results
+			this.currentRound.answerPost = new Discord.MessageEmbed().setTitle(`Here are your answers to: "${this.currentRound.currentPrompt}"`);
+			this.currentRound.answerPost.addField(this.currentRound.responses[0].emoji, this.currentRound.responses[0].content, false);
+			this.activeChannel.send(this.currentRound.answerPost).then(() => {
+				//read the rest of the responses
+				return this.endRound();
+			});
+		}
 	}
 
 	async HandleSignup(message) {
@@ -92,25 +89,18 @@ class promptGame {
 		return this.scoreRound();
 	}
 
-	KickUser(message, userID) {
+	async KickUser(message, userID) {
 		const toKick = Discord.client.users.cache.get(`${userID}`);
-		message.channel.send(`${message.author} wants to kick ${toKick} those in favour, react with \ud83d\ude4b`).then(async sentMessage => {
-			await sentMessage.react('\ud83d\ude4b');
-			this.HeadCount('\ud83d\ude4b', sentMessage).then(collected => {
-				if(Math.floor(this.playerList.length / 2) + 1 <= collected.length) {
-					message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
-					try {
-						this.playerList.splice(this.playerList.indexOf(player => player.id === userID), 1);
-					}
-					catch (e) {
-						console.error(e);
-					}
-				}
-				else {
-					message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
-				}
-			});
-		});
+		const sentMessage = message.channel.send(`${message.author} wants to kick ${toKick} those in favour, react with \ud83d\ude4b`);
+		await sentMessage.react('\ud83d\ude4b');
+		const collected = this.HeadCount('\ud83d\ude4b', sentMessage);
+		if(Math.floor(this.playerList.length / 2) + 1 <= collected.length) {
+			message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
+			this.playerList.splice(this.playerList.indexOf(player => player.id === userID), 1).catch(err => console.error(err));
+		}
+		else {
+			message.channel.send('majority rules in favour, kicking').catch(e => console.error(e));
+		}
 	}
 
 	endGame() {
@@ -131,33 +121,34 @@ class promptGame {
 		}
 	}
 
-	scoreRound() {
+	async scoreRound() {
 		const nextRound = this.BeginRound();
-		this.currentRound.Score(this.playerList).then((winners, count) => {
-			if(winners.length === 1) {
-				this.playerList[winners].score += 1;
-				this.czar = Discord.client.users.cache.get(`${this.playerList[winners].id}`);
-				this.activeChannel.send(`the winner with ${count - 1} votes is... ${this.czar}, their current score is: ${this.playerList[winners].score}!`);
-				console.log(`${this.czar.tag} gained a point, giving them ${this.playerList[winners].score}`);
+		const { winners, count } = await this.currentRound.Score(this.playerList).catch(err => console.error(err));
 
-			}
-			else {
-				this.activeChannel.send('The winners of this round are...');
-				for (const coWinner of winners) {
-					this.activeChannel.send(`${Discord.client.users.cache.get(this.playerList[coWinner].id)} with a score of ${this.playerList[coWinner].score}`);
-				}
-				this.czar = Discord.client.users.cache.get(`${winners[0].id}`);
+		if(winners.length === 1) {
+			this.playerList[winners].score += 1;
+			this.czar = Discord.client.users.cache.get(`${this.playerList[winners].id}`);
+			this.activeChannel.send(`the winner with ${count - 1} votes is... ${this.czar}, their current score is: ${this.playerList[winners].score}!`);
+			console.log(`${this.czar.tag} gained a point, giving them ${this.playerList[winners].score}`);
 
+		}
+		else {
+			this.activeChannel.send('The winners of this round are...');
+			for (const coWinner of winners) {
+				this.activeChannel.send(`${Discord.client.users.cache.get(this.playerList[coWinner].id)} with a score of ${this.playerList[coWinner].score}`);
 			}
-			const victors = this.playerList.filter(player => player.score >= 10);
-			if (victors.length !== 0) {
-				return this.endGame();
-			}
-			this.activeChannel.send('starting a new round, keep an eye on those DMs').then(async function() {
-				await Sleep(5000);
-				return nextRound;
-			});
-		}).catch(err => console.error(err));
+			this.czar = Discord.client.users.cache.get(`${winners[0].id}`);
+
+		}
+
+		const victors = this.playerList.filter(player => player.score >= 10);
+		if (victors.length !== 0) {
+			return this.endGame();
+		}
+		this.activeChannel.send('starting a new round, keep an eye on those DMs').then(async function() {
+			await Sleep(5000);
+			return nextRound;
+		});
 	}
 
 	HeadCount(focusedEmoji, message) {
@@ -182,8 +173,6 @@ class promptGame {
 		});
 	}
 }
-
-
 
 function Sleep(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
