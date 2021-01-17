@@ -1,4 +1,4 @@
 ## TinkyWinky
 Discord.js bot for playing YIAY
 # Bot Health
-[![CodeScene Code Health](https://codescene.io/projects/9105/status-badges/code-health)](https://codescene.io/projects/9105) [![CodeScene System Mastery](https://codescene.io/projects/9105/status-badges/system-mastery)](https://codescene.io/projects/9105)
+[![CodeScene Code Health](https://codescene.io/projects/9105/status-badges/code-health)](https://codescene.io/projects/9105) [![CodeScene System Mastery](https://codescene.io/projects/9105/status-badges/system-mastery)](https://codescene.io/projects/9105) [![BCH compliance](https://bettercodehub.com/edge/badge/LittleDeltaPlus/TinkyWinky?branch=Functional_Stable)](https://bettercodehub.com/)
